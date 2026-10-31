@@ -49,7 +49,20 @@ object GlyphDisplay {
     }
 
     /** Frame index for a running animation: scroll through, then pause blank briefly, repeat. */
-    fun stepAt(code: String, tick: Int): Int = tick % (steps(code) + PAUSE_STEPS)
+
+    private var cacheCode: String? = null
+    private var cacheFrames: List<IntArray> = emptyList()
+    /** All scroll frames rendered up front, so nothing heavy happens between frames (that caused flicker). */
+    @Synchronized fun framesFor(ctx: Context, code: String): List<IntArray> {
+        if (cacheCode != code) {
+            cacheFrames = (0 until steps(code) + PAUSE_STEPS).map { i ->
+                val step = if (i < steps(code)) i else 0 // pause shows an empty strip
+                frame(ctx.applicationContext, bitmapFor(code, step))
+            }
+            cacheCode = code
+        }
+        return cacheFrames
+    }
 
     private fun frame(ctx: Context, bmp: Bitmap): IntArray {
         val obj = GlyphMatrixObject.Builder().setImageSource(bmp).setPosition(0, 0).setBrightness(255).build()
@@ -79,24 +92,42 @@ object GlyphDisplay {
         if (users <= 0) { users = 0; try { gm?.unInit() } catch (_: Exception) {}; gm = null; ready = false; pending.clear() }
     }
 
+    private var job: Runnable? = null
+    private var jobEnd: Runnable? = null
+
+    private fun stopJob() {
+        job?.let { main.removeCallbacks(it) }; jobEnd?.let { main.removeCallbacks(it) }
+        job = null; jobEnd = null
+    }
+
     /** From the notification listener: show the code for [ms], then hand the matrix back. */
     fun showApp(ctx: Context, code: String, ms: Long = 30_000) {
         val app = ctx.applicationContext
+        main.post { stopJob() } // a newer code replaces any running one
+        val frames = framesFor(app, code)
+        val blank = frame(app, Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888))
         acquire(app) { m ->
-            val start = System.currentTimeMillis()
-            val tick = object : Runnable {
-                override fun run() {
-                    val t = ((System.currentTimeMillis() - start) / SCROLL_MS).toInt()
-                    try { m.setAppMatrixFrame(frame(app, bitmapFor(code, stepAt(code, t)))) } catch (e: Exception) { e.printStackTrace() }
-                    if (System.currentTimeMillis() - start < ms) main.postDelayed(this, SCROLL_MS)
+            main.post {
+                stopJob()
+                val start = android.os.SystemClock.uptimeMillis()
+                val tick = object : Runnable {
+                    override fun run() {
+                        if (job !== this) return
+                        val n = (android.os.SystemClock.uptimeMillis() - start) / SCROLL_MS
+                        try { m.setAppMatrixFrame(frames[(n % frames.size).toInt()]) } catch (e: Exception) { e.printStackTrace() }
+                        main.postAtTime(this, start + (n + 1) * SCROLL_MS)
+                    }
                 }
+                val end = Runnable {
+                    stopJob()
+                    try { m.setAppMatrixFrame(blank) } catch (_: Exception) {}
+                    try { m.closeAppMatrix() } catch (_: Exception) {}
+                    release()
+                }
+                job = tick; jobEnd = end
+                main.post(tick)
+                main.postAtTime(end, start + ms)
             }
-            tick.run()
-            main.postDelayed({
-                try { m.setAppMatrixFrame(frame(app, Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888))) } catch (_: Exception) {}
-                try { m.closeAppMatrix() } catch (_: Exception) {}
-                release()
-            }, ms)
         }
     }
 
@@ -107,8 +138,8 @@ object GlyphDisplay {
         val m = gm ?: return
         if (!ready) return
         try {
-            val bmp = if (code != null) bitmapFor(code, stepAt(code, tick)) else Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888)
-            m.setMatrixFrame(frame(ctx.applicationContext, bmp))
+            if (code != null) { val f = framesFor(ctx, code); m.setMatrixFrame(f[tick % f.size]) }
+            else m.setMatrixFrame(frame(ctx.applicationContext, Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888)))
         } catch (e: Exception) { e.printStackTrace() }
     }
 }
