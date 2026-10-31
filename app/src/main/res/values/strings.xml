@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Glyph OTP</string>
+    <string name="toy_name">OTP</string>
+    <string name="toy_summary">Shows your latest one-time code</string>
+</resources>
