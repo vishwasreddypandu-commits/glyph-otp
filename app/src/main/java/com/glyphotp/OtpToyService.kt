@@ -25,7 +25,7 @@ class OtpToyService : Service() {
         override fun run() {
             val code = OtpStore.fresh(this@OtpToyService)
             GlyphDisplay.toyShow(this@OtpToyService, code, tick++)
-            if (code != null) handler.postDelayed(this, GlyphDisplay.PAGE_MS) else running = false
+            if (code != null) handler.postDelayed(this, GlyphDisplay.SCROLL_MS) else running = false
         }
     }
     private fun startLoop() { if (!running) { running = true; handler.post(loop) } }
