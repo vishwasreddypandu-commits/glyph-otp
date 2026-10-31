@@ -20,12 +20,5 @@
             </intent-filter>
         </service>
 
-        <service android:name=".OtpToyService" android:exported="true">
-            <intent-filter><action android:name="com.nothing.glyph.TOY"/></intent-filter>
-            <meta-data android:name="com.nothing.glyph.toy.name" android:resource="@string/toy_name"/>
-            <meta-data android:name="com.nothing.glyph.toy.image" android:resource="@drawable/toy_preview"/>
-            <meta-data android:name="com.nothing.glyph.toy.summary" android:resource="@string/toy_summary"/>
-            <meta-data android:name="com.nothing.glyph.toy.aod_support" android:value="1"/>
-        </service>
     </application>
 </manifest>

@@ -21,12 +21,6 @@ class MainActivity : Activity() {
         fun btn(t: String, f: () -> Unit) = l.addView(Button(this).apply { text = t; setOnClickListener { f() } })
         btn("1. Allow notification access") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         btn("2. Test: show 482913") { GlyphDisplay.showApp(this, "482913") }
-        btn("3. Add OTP toy to Always-on Glyph") {
-            try {
-                startActivity(Intent().setComponent(ComponentName("com.nothing.thirdparty",
-                    "com.nothing.thirdparty.matrix.toys.manager.ToysManagerActivity")))
-            } catch (e: Exception) { status.text = "Open Settings > Glyph Interface > Glyph Toys manually.\n${e.message}" }
-        }
         setContentView(l)
     }
 

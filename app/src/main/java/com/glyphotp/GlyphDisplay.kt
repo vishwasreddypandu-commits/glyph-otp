@@ -95,7 +95,7 @@ object GlyphDisplay {
     private var job: Runnable? = null
     private var jobEnd: Runnable? = null
 
-    private fun stopJob() {
+    private fun cancelCallbacks() {
         job?.let { main.removeCallbacks(it) }; jobEnd?.let { main.removeCallbacks(it) }
         job = null; jobEnd = null
     }
@@ -103,44 +103,35 @@ object GlyphDisplay {
     /** From the notification listener: scroll the code [loops] times, then hand the matrix back to the system glyphs. */
     fun showApp(ctx: Context, code: String, loops: Int = 3) {
         val app = ctx.applicationContext
-        main.post { stopJob() } // a newer code replaces any running one
         val frames = framesFor(app, code)
         val ms = (frames.size * loops - PAUSE_STEPS) * SCROLL_MS
         val blank = frame(app, Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888))
         acquire(app) { m ->
             main.post {
-                stopJob()
+                // A newer code replaces a running one; give back the old one's hold on the service.
+                if (job != null || jobEnd != null) { cancelCallbacks(); release() }
                 val start = android.os.SystemClock.uptimeMillis()
                 val tick = object : Runnable {
                     override fun run() {
                         if (job !== this) return
                         val n = (android.os.SystemClock.uptimeMillis() - start) / SCROLL_MS
-                        try { m.setAppMatrixFrame(frames[(n % frames.size).toInt()]) } catch (e: Exception) { e.printStackTrace() }
+                        try { m.setAppMatrixFrame(frames[(n % frames.size).toInt()]) } catch (e: Throwable) { e.printStackTrace() }
                         main.postAtTime(this, start + (n + 1) * SCROLL_MS)
                     }
                 }
-                val end = Runnable {
-                    stopJob()
-                    try { m.setAppMatrixFrame(blank) } catch (_: Exception) {}
-                    try { m.closeAppMatrix() } catch (_: Exception) {}
-                    release()
+                val end = object : Runnable {
+                    override fun run() {
+                        if (jobEnd !== this) return
+                        cancelCallbacks()
+                        try { m.setAppMatrixFrame(blank) } catch (_: Throwable) {}
+                        try { m.closeAppMatrix() } catch (_: Throwable) {}
+                        release()
+                    }
                 }
                 job = tick; jobEnd = end
                 main.post(tick)
                 main.postAtTime(end, start + ms)
             }
         }
-    }
-
-    // Toy service helpers (always-on glyph toy).
-    fun toyStart(ctx: Context) = acquire(ctx.applicationContext) {}
-    fun toyStop() = release()
-    fun toyShow(ctx: Context, code: String?, tick: Int = 0) {
-        val m = gm ?: return
-        if (!ready) return
-        try {
-            if (code != null) { val f = framesFor(ctx, code); m.setMatrixFrame(f[tick % f.size]) }
-            else m.setMatrixFrame(frame(ctx.applicationContext, Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888)))
-        } catch (e: Exception) { e.printStackTrace() }
     }
 }
