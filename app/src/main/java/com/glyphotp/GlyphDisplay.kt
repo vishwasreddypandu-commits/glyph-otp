@@ -100,11 +100,12 @@ object GlyphDisplay {
         job = null; jobEnd = null
     }
 
-    /** From the notification listener: show the code for [ms], then hand the matrix back. */
-    fun showApp(ctx: Context, code: String, ms: Long = 30_000) {
+    /** From the notification listener: scroll the code [loops] times, then hand the matrix back to the system glyphs. */
+    fun showApp(ctx: Context, code: String, loops: Int = 3) {
         val app = ctx.applicationContext
         main.post { stopJob() } // a newer code replaces any running one
         val frames = framesFor(app, code)
+        val ms = (frames.size * loops - PAUSE_STEPS) * SCROLL_MS
         val blank = frame(app, Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888))
         acquire(app) { m ->
             main.post {
