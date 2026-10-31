@@ -18,6 +18,7 @@ object GlyphDisplay {
         intArrayOf(7,5,5,5,7), intArrayOf(2,6,2,2,7), intArrayOf(7,1,7,4,7), intArrayOf(7,1,7,1,7), intArrayOf(5,5,7,1,1),
         intArrayOf(7,4,7,1,7), intArrayOf(7,4,7,5,7), intArrayOf(7,1,1,1,1), intArrayOf(7,5,7,5,7), intArrayOf(7,5,7,1,7)
     )
+    const val PAGE_MS = 1500L
     private val main = Handler(Looper.getMainLooper())
     private var users = 0
     private var gm: GlyphMatrixManager? = null
@@ -26,23 +27,20 @@ object GlyphDisplay {
 
     private fun target() = if (Common.is25111p()) Glyph.DEVICE_25111p else Glyph.DEVICE_23112
 
-    /** Square bitmap with the code as pixels: up to 3 digits per row, two rows. */
-    fun bitmapFor(code: String): Bitmap {
+    /** The matrix is round, so only the middle rows are wide. One row of up to 3 digits (11px) fits; longer codes are split into pages. */
+    fun pages(code: String): List<String> =
+        if (code.length <= 3) listOf(code) else listOf(code.take((code.length + 1) / 2), code.drop((code.length + 1) / 2))
+
+    fun bitmapFor(digits: String): Bitmap {
         val n = Common.getDeviceMatrixLength().coerceAtLeast(13)
         val bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
-        val rows = if (code.length <= 3) listOf(code) else listOf(code.take((code.length + 1) / 2), code.drop((code.length + 1) / 2))
-        val totalH = rows.size * 5 + (rows.size - 1) * 2
-        var y0 = (n - totalH) / 2
-        for (row in rows) {
-            val w = row.length * 4 - 1
-            var x0 = (n - w) / 2
-            for (ch in row) {
-                val g = FONT[ch - '0']
-                for (r in 0 until 5) for (c in 0 until 3)
-                    if (g[r] and (4 shr c) != 0) bmp.setPixel(x0 + c, y0 + r, Color.WHITE)
-                x0 += 4
-            }
-            y0 += 7
+        val y0 = (n - 5) / 2
+        var x0 = (n - (digits.length * 4 - 1)) / 2
+        for (ch in digits) {
+            val g = FONT[ch - '0']
+            for (r in 0 until 5) for (c in 0 until 3)
+                if (g[r] and (4 shr c) != 0) bmp.setPixel(x0 + c, y0 + r, Color.WHITE)
+            x0 += 4
         }
         return bmp
     }
@@ -79,7 +77,16 @@ object GlyphDisplay {
     fun showApp(ctx: Context, code: String, ms: Long = 30_000) {
         val app = ctx.applicationContext
         acquire(app) { m ->
-            try { m.setAppMatrixFrame(frame(app, bitmapFor(code))) } catch (e: Exception) { e.printStackTrace() }
+            val pgs = pages(code)
+            val start = System.currentTimeMillis()
+            val tick = object : Runnable {
+                override fun run() {
+                    val i = ((System.currentTimeMillis() - start) / PAGE_MS).toInt() % pgs.size
+                    try { m.setAppMatrixFrame(frame(app, bitmapFor(pgs[i]))) } catch (e: Exception) { e.printStackTrace() }
+                    if (System.currentTimeMillis() - start < ms) main.postDelayed(this, PAGE_MS)
+                }
+            }
+            tick.run()
             main.postDelayed({
                 try { m.closeAppMatrix() } catch (_: Exception) {}
                 release()
@@ -90,11 +97,12 @@ object GlyphDisplay {
     // Toy service helpers (always-on glyph toy).
     fun toyStart(ctx: Context) = acquire(ctx.applicationContext) {}
     fun toyStop() = release()
-    fun toyShow(ctx: Context, code: String?) {
+    fun toyShow(ctx: Context, code: String?, tick: Int = 0) {
         val m = gm ?: return
         if (!ready) return
         try {
-            val bmp = if (code != null) bitmapFor(code) else Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888)
+            val pgs = code?.let { pages(it) }
+            val bmp = if (pgs != null) bitmapFor(pgs[tick % pgs.size]) else Bitmap.createBitmap(13, 13, Bitmap.Config.ARGB_8888)
             m.setMatrixFrame(frame(ctx.applicationContext, bmp))
         } catch (e: Exception) { e.printStackTrace() }
     }

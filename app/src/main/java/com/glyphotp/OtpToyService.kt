@@ -15,17 +15,27 @@ class OtpToyService : Service() {
         override fun handleMessage(msg: Message) {
             if (msg.what == GlyphToy.MSG_GLYPH_TOY) {
                 val ev = msg.data.getString(GlyphToy.MSG_GLYPH_TOY_DATA)
-                if (ev == GlyphToy.EVENT_AOD) GlyphDisplay.toyShow(this@OtpToyService, OtpStore.fresh(this@OtpToyService))
+                if (ev == GlyphToy.EVENT_AOD) startLoop()
             } else super.handleMessage(msg)
         }
     }
+    private var running = false
+    private var tick = 0
+    private val loop = object : Runnable {
+        override fun run() {
+            val code = OtpStore.fresh(this@OtpToyService)
+            GlyphDisplay.toyShow(this@OtpToyService, code, tick++)
+            if (code != null) handler.postDelayed(this, GlyphDisplay.PAGE_MS) else running = false
+        }
+    }
+    private fun startLoop() { if (!running) { running = true; handler.post(loop) } }
     private val messenger = Messenger(handler)
 
     override fun onBind(intent: Intent): IBinder {
         GlyphDisplay.toyStart(this)
-        handler.postDelayed({ GlyphDisplay.toyShow(this, OtpStore.fresh(this)) }, 800)
+        handler.postDelayed({ startLoop() }, 800)
         return messenger.binder
     }
 
-    override fun onUnbind(intent: Intent): Boolean { GlyphDisplay.toyStop(); return false }
+    override fun onUnbind(intent: Intent): Boolean { handler.removeCallbacks(loop); running = false; GlyphDisplay.toyStop(); return false }
 }
